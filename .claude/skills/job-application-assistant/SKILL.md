@@ -2,10 +2,11 @@
 name: job-application-assistant
 description: >
   Assists with job applications: evaluating job postings, tailoring CVs, writing cover letters,
-  and preparing for interviews. Triggers on keywords like: job posting, job application, CV,
-  cover letter, resume, interview prep, job fit, career, application, apply, ansøgning, stilling
+  preparing for interviews, and managing the visual application kanban. Triggers on keywords like:
+  job posting, job application, CV, cover letter, resume, interview prep, job fit, career,
+  application, apply, kanban, pipeline, board, card, ansøgning, stilling
 allowed-tools: Read, Glob, Grep, WebFetch, WebSearch, Edit, Write, AskUserQuestion
-framework_version: 1.1.0
+framework_version: 1.2.0
 ---
 
 # Job Application Assistant
@@ -45,6 +46,29 @@ When the user provides a job posting (URL or text), follow this workflow:
 
 ---
 
+## Kanban companion
+
+When the user invokes `/kanban` or asks to see, update, move, prioritize, or
+annotate an application card, follow `.claude/commands/kanban.md` and load
+`09-kanban.md` for the board contract.
+
+The Kanban is the operational view of the same job-search workflow, not a
+second application database. The agent must:
+
+- read the current board context before proposing or applying a mutation;
+- distinguish `user`, `agent`, and `system` activity and preserve the actor on
+  every movement;
+- surface the user's manual card moves in its next context so a user move is
+  never mistaken for an agent decision;
+- use the canonical stages and the tool names documented in `09-kanban.md`;
+- keep `job_search_tracker.csv` and application archives as the source of truth
+  for application facts and outcomes; and
+- never treat a Kanban mutation as permission to submit an application or use
+  portal credentials. Submission still follows `/apply` and requires the
+  existing confirmation gate.
+
+---
+
 ## Reference Files
 
 | File | Purpose |
@@ -57,6 +81,7 @@ When the user provides a job posting (URL or text), follow this workflow:
 | `06-cover-letter-templates.md` | LaTeX cover letter structure and tailoring rules |
 | `07-interview-prep.md` | STAR examples, tough questions, roleplay guidelines |
 | `08-application-forms.md` | Portal free-text fields: self-introduction, project entries, character-limited pitches |
+| `09-kanban.md` | Visual pipeline stages, activity authorship, board tools, and sync rules |
 
 ---
 
@@ -67,4 +92,5 @@ The user may also ask for individual steps without the full workflow:
 - "Write a CV for [company]" - Step 2 only
 - "Write a cover letter for [role] at [company]" - Step 3 only
 - "Help me prepare for an interview at [company]" - Step 4 only
+- "/kanban" - open the pipeline context, visualize cards, and manage board state
 - "What jobs should I look for?" - Career strategy discussion using profile + evaluation framework

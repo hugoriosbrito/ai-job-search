@@ -1,0 +1,4 @@
+CARTA DE APRESENTAÇÃO DE EXEMPLO
+
+Este arquivo redigido existe apenas para demonstrar os downloads do Kanban.
+Substitua-o localmente pela carta gerada para a vaga.

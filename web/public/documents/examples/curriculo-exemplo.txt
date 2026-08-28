@@ -1,0 +1,4 @@
+CURRÍCULO DE EXEMPLO
+
+Este arquivo redigido existe apenas para demonstrar os downloads do Kanban.
+Substitua-o localmente pelo currículo gerado para a vaga.
