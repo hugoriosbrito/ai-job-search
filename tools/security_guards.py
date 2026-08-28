@@ -105,6 +105,12 @@ ALLOWED_IGNORE_NEGATIONS = {
     "!cv/main_example.tex",
     "!cover_letters/cover_example.tex",
     "!documents/**/.gitkeep",
+    # Public demo assets and redacted examples are intentionally committed even
+    # though their parent locations are ignored for personal generated output.
+    "!.env.example",
+    "!assets/kanban-screenshot.png",
+    "!web/public/documents/examples/",
+    "!web/public/documents/examples/**",
 }
 
 # Hook commands the template legitimately ships, as "<Event>:<command>" strings.
