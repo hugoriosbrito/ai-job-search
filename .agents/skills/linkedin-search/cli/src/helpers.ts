@@ -12,9 +12,7 @@ export function writeError(error: string, code: string): void {
   process.stderr.write(JSON.stringify({ error, code }) + "\n")
 }
 
-const UA =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+const UA = "Mozilla/5.0 (compatible; linkedin-search-cli/1.0)"
 
 /** Fetch HTML with exponential backoff on 429/5xx. Returns "" on a 404. */
 export async function htmlFetch(url: string): Promise<string> {
@@ -65,7 +63,6 @@ export interface JobDetail extends JobCard {
   employmentType: string | null
   jobFunction: string | null
   industries: string | null
-  applyUrl: string | null
 }
 
 /**
@@ -230,9 +227,6 @@ export function parseJobDetail(html: string, id: string): JobDetail {
     criteria[clean(cm[1]).toLowerCase()] = clean(cm[2])
   }
 
-  const applyMatch = html.match(/class="topcard__link[^"]*"[^>]*href="([^"]+)"/i)
-  const applyUrl = applyMatch ? decodeHtmlEntities(applyMatch[1]).split("?")[0] : null
-
   return {
     id,
     title: title ? clean(title) : "(untitled)",
@@ -246,7 +240,6 @@ export function parseJobDetail(html: string, id: string): JobDetail {
     employmentType: criteria["employment type"] ?? null,
     jobFunction: criteria["job function"] ?? null,
     industries: criteria["industries"] ?? null,
-    applyUrl,
   }
 }
 
@@ -254,6 +247,12 @@ export function parseJobDetail(html: string, id: string): JobDetail {
 export function jobageToTPR(days: number): string | null {
   if (!days || days <= 0 || days >= 9999) return null
   return `r${days * 86400}`
+}
+
+/** Convert a job-age in minutes to LinkedIn's f_TPR seconds value (sub-day precision). */
+export function minutesToTPR(minutes: number): string | null {
+  if (!minutes || minutes <= 0) return null
+  return `r${minutes * 60}`
 }
 
 /** Workplace-type flag: on-site=1, remote=2, hybrid=3. */

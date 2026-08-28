@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseJobCards, parseJobDetail, extractDivContent } from "../src/helpers";
+import { parseJobCards, parseJobDetail, extractDivContent, minutesToTPR } from "../src/helpers";
 
 // Minimal search-card markup: parseJobCards splits on the job-posting URN and
 // needs an id, a base-search-card__title, and a full-link. Everything else is
@@ -13,6 +13,46 @@ function searchCard(id: string, title: string, company = "Acme"): string {
     </div>
   </li>`;
 }
+
+// The /scrape contract fields beyond title/company. The original fixture had
+// no <time> or location element at all, so deleting the date extraction from
+// parseJobCards left every test green (review finding F35, 2026-08-19).
+function searchCardWithMeta(id: string, datetimeAttr: string, listdateClass = "job-search-card__listdate"): string {
+  return `<li>
+    <div data-entity-urn="urn:li:jobPosting:${id}">
+      <a class="base-card__full-link" href="https://www.linkedin.com/jobs/view/${id}"></a>
+      <h3 class="base-search-card__title">Data Engineer</h3>
+      <h4 class="base-search-card__subtitle"><a href="https://www.linkedin.com/company/acme">Acme</a></h4>
+      <span class="job-search-card__location">Copenhagen, Denmark</span>
+      <time class="${listdateClass}" datetime="${datetimeAttr}">3 days ago</time>
+    </div>
+  </li>`;
+}
+
+describe("parseJobCards contract fields", () => {
+  test("extracts date from the listdate <time> element", () => {
+    const [card] = parseJobCards(searchCardWithMeta("200", "2026-08-10"));
+    expect(card.date).toBe("2026-08-10");
+  });
+
+  test("extracts date from the listdate--new variant class", () => {
+    const [card] = parseJobCards(
+      searchCardWithMeta("201", "2026-08-15", "job-search-card__listdate--new"),
+    );
+    expect(card.date).toBe("2026-08-15");
+  });
+
+  test("extracts location from the location span", () => {
+    const [card] = parseJobCards(searchCardWithMeta("202", "2026-08-10"));
+    expect(card.location).toBe("Copenhagen, Denmark");
+  });
+
+  test("date and location are null when the elements are absent", () => {
+    const [card] = parseJobCards(searchCard("203", "Bare Card"));
+    expect(card.date).toBeNull();
+    expect(card.location).toBeNull();
+  });
+});
 
 describe("decodeHtmlEntities (via parseJobCards)", () => {
   test("decodes hexadecimal numeric entities (&#xE9;)", () => {
@@ -43,6 +83,19 @@ describe("decodeHtmlEntities (via parseJobCards)", () => {
   test("decodes hex entities in the company subtitle too", () => {
     const [card] = parseJobCards(searchCard("128", "Engineer", "N&#xF8;rrebro ApS"));
     expect(card.company).toBe("Nørrebro ApS");
+  });
+});
+
+describe("parseJobDetail dropped fields", () => {
+  test("emits no applyUrl field", () => {
+    // The extraction regex assumed class-before-href and never matched
+    // LinkedIn's real markup (null on every live posting), and a fixed
+    // version would only capture the job-view URL - a duplicate of `url`.
+    // The field is dropped rather than fixed (review finding F19,
+    // 2026-08-19). This test pins the removal so it does not quietly
+    // return as a broken or redundant field.
+    const job = parseJobDetail("<html></html>", "1");
+    expect("applyUrl" in job).toBe(false);
   });
 });
 
@@ -109,5 +162,18 @@ describe("extractDivContent", () => {
     expect(job.description).toContain("5 years Python");
     expect(job.description).toContain("About Us:");
     expect(job.description).toContain("We are hiring!");
+  });
+});
+
+describe("minutesToTPR", () => {
+  test("converts minutes to an f_TPR seconds window", () => {
+    expect(minutesToTPR(30)).toBe("r1800");
+    expect(minutesToTPR(1)).toBe("r60");
+    expect(minutesToTPR(1440)).toBe("r86400"); // matches jobageToTPR(1)
+  });
+
+  test("returns null for non-positive input", () => {
+    expect(minutesToTPR(0)).toBeNull();
+    expect(minutesToTPR(-5)).toBeNull();
   });
 });

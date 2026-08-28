@@ -141,15 +141,17 @@ Copy-Item cover_letters\cover.cls, cover_letters\OpenFonts -Destination $SmokeDi
 Push-Location $SmokeDir; xelatex -interaction=nonstopmode -halt-on-error cover_smoke.tex; Pop-Location
 ```
 
-### Optional: pdftotext (for the ATS check)
+### Optional: ATS text extraction (pypdf, then pdftotext)
 
-`/apply` runs an ATS parseability check on the compiled CV: it extracts the PDF's text layer and verifies contact details, reading order, and keyword coverage the way an applicant-tracking system sees them. This uses `pdftotext` from [poppler](https://poppler.freedesktop.org/), which is not part of TeX distributions:
+`/apply` runs an ATS parseability check on the compiled CV: it extracts the PDF's text layer and verifies contact details, reading order, and keyword coverage the way an applicant-tracking system sees them.
+
+The default extractor is **pypdf** (BSD, `pip install pypdf`). Poppler `pdftotext` remains an optional fallback:
 
 - **macOS:** `brew install poppler`
 - **Debian/Ubuntu:** `sudo apt install poppler-utils`
 - **Windows:** `choco install poppler`
 
-If `pdftotext` is missing, `/apply` skips the mechanical check with a warning and falls back to a visual keyword review — everything else works normally.
+If a command still uses `pdftotext -layout`, it must pass `-enc UTF-8` as well. If **neither** extractor is available, `/apply` skips the mechanical check with a warning and falls back to a visual keyword review — everything else works normally.
 
 ## 2. Fork and clone
 
@@ -159,6 +161,14 @@ cd ai-job-search
 ```
 
 Or manually: fork on GitHub, then clone your fork.
+
+> **Before you go further: forks are public.** GitHub cannot make a fork of a public
+> repository private, and `/setup` (section 6) writes your personal data into **tracked**
+> files — pushing those commits to a fork publishes them. If this copy is for your own
+> job search rather than for contributing, prefer a **private repository** with this repo
+> as `upstream`: see section 8, step 1 for the exact commands and why committing your
+> personalization there is still the right move. Everything else in this guide works
+> identically either way.
 
 ## 3. Install job search CLI dependencies
 Run these from the repository root.
@@ -298,6 +308,16 @@ Upstream keeps improving the methodology files your fork has personalized, so pl
    python3 tools/check_upstream_updates.py
    ```
    It compares the `framework_version` markers in your framework files against upstream and lists exactly which methodology files changed, with the diff command for each.
+
+   Two tools answer two different questions, and it's worth running both:
+   - **`check_upstream_updates.py`** — *which of my personalized files changed?* It reads the `framework_version` stamp on each methodology file, so it flags exactly the customized files a release touched.
+   - **`upstream_triage.py`** — *which upstream commits deserve my attention?* It walks the commits you're behind and sorts them into "worth reviewing" vs "probably skip", dropping anything you've already cherry-picked (matched by `git patch-id`, so ported work falls off with no bookkeeping), commits that only touch files your fork removed, and SHAs you've listed in `.github/upstream-wontport.txt`. It's report-only — it prints ready-to-run `git cherry-pick` lines but never merges, pushes, or opens a PR, because on a fork "applies cleanly" isn't "correct".
+
+     ```bash
+     python3 tools/upstream_triage.py --remote upstream
+     ```
+
+     Forks also inherit a `.github/workflows/upstream-watch.yml` that runs this weekly and writes the result into a single rolling issue (it no-ops on the upstream template itself, and stays disabled on a fork until you enable Actions).
 3. **Merge normally.** `git merge upstream/master` (or `git pull`) three-way-merges upstream's edits around your personalization; because methodology edits rarely touch the lines `/setup` filled in, most updates land cleanly. A conflict in a personalized file is a *feature*, not a failure — it means upstream changed methodology in a section you customized, and the version marker plus its changelog commit tell you why. Resolve by keeping your data and adopting the methodology change around it.
 
 ## Troubleshooting
