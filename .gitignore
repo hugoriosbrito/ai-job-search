@@ -2,6 +2,11 @@
 node_modules/
 bun.lock
 
+# Local secrets and environment overrides
+.env
+.env.*
+!.env.example
+
 # Python
 __pycache__/
 *.pyc
@@ -38,6 +43,7 @@ linkedin_Profile.pdf
 *.jpg
 *.jpeg
 *.png
+!assets/kanban-screenshot.png
 !cover_letters/OpenFonts/fonts/**
 
 # OS files
@@ -82,6 +88,11 @@ documents/interview/**
 
 # Personal job search tracking
 job_search_tracker.csv
+web/public/tracker.json
+web/dist/
+web/public/documents/**
+!web/public/documents/examples/
+!web/public/documents/examples/**
 
 # Gmail sync state (message IDs, subjects - personal data)
 gmail_sync/

@@ -144,9 +144,33 @@ This runs the full workflow: evaluate fit, draft CV + cover letter, review with 
 
 Postings are treated as untrusted input (the workflow follows no instructions embedded in them and fetches no links from their body), but agentic defenses are instruction-level, not a sandbox - on an unfamiliar job board, skim what was fetched and written before you hit send. Details in [SECURITY.md](SECURITY.md).
 
+## Visual pipeline
+
+The repository also includes a local web frontend under [`web/`](web/). It
+provides a kanban for Radar, Seleção, Candidatura, Entrevista, Oferta and
+Encerrada, with local persistence, CSV import, an authorship audit trail, and an
+AI context/tool contract that keeps user moves distinct from agent actions.
+
+![Kanban de candidaturas](assets/kanban-screenshot.png)
+
+```powershell
+cd web
+npm install
+npm run sync:tracker  # optional: load the local job_search_tracker.csv
+npm run sync:documents # optional: publish local generated documents (ignored by Git)
+npm run dev
+```
+
+The board ships with redacted example files. Personal trackers, generated PDFs,
+and application documents stay local and are excluded by `.gitignore`.
+
+See [`web/README.md`](web/README.md) for the integration notes.
+
 ## Other commands
 
-`/setup`, `/scrape`, and `/apply` form the core workflow. Ten more commands extend it once your profile is in place:
+`/setup`, `/scrape`, and `/apply` form the core workflow. Eleven more commands extend it once your profile is in place:
+
+- **`/kanban`** opens the visual application pipeline, shows the latest cards and manual user moves, and lets the agent create, edit, move, prioritize, comment on, record interviews for, or archive cards through the board tool contract. It keeps `job_search_tracker.csv` and application archives authoritative and never submits a portal application.
 
 - **`/interview`** preps you for a scheduled interview on a tracked application. It builds a stage-specific prep pack from the application's archive (the exact posting, the CV and cover letter the interviewer actually read, feedback recorded from earlier rounds), researches the company and interviewers with a verify-before-use rule, maps likely questions to your STAR examples, and offers a mock interview following the roleplay protocol in `07-interview-prep.md`. Gaps get honest bridge answers, never invented experience.
 - **`/outcome`** records what happened to an application - interview stages, offers, rejections, silence. It archives the submitted CV, cover letter, and posting text into `documents/applications/<company>_<role>/`, keeps `outcome.md` in the format `/setup` Path A parses, and updates the tracker. It also owns the stretch before there is an outcome to record: `/outcome followup` surfaces open applications that have gone quiet (default 10 days), drafts a short channel-appropriate follow-up in your writing style using only claims from the materials you already submitted (drafts only, never sends; at most twice per application), and offers a thank-you note in the same turn an interview stage is recorded. Once a few applications resolve, it points you back to `/setup` to calibrate the fit framework from what actually got interviews.
@@ -179,6 +203,7 @@ ai-job-search/
 │   │   ├── interview.md               # /interview stage-specific prep pack + mock interview
 │   │   ├── html-report.md             # /html-report generate application tracker dashboard
 │   │   ├── notion-sync.md             # /notion-sync one-way pipeline view in a Notion database
+│   │   ├── kanban.md                  # /kanban visualize and manage the application pipeline
 │   │   └── reset.md                   # /reset wipe profile data or documents folder
 │   ├── skills/
 │   │   ├── job-application-assistant/  # Core application skill
@@ -189,7 +214,8 @@ ai-job-search/
 │   │   │   ├── 04-job-evaluation.md   # Scoring framework for job fit
 │   │   │   ├── 05-cv-templates.md     # LaTeX CV structure + tailoring rules
 │   │   │   ├── 06-cover-letter-templates.md # LaTeX cover letter templates
-│   │   │   └── 07-interview-prep.md   # STAR examples + interview framework
+│   │   │   ├── 07-interview-prep.md   # STAR examples + interview framework
+│   │   │   └── 09-kanban.md           # Visual pipeline and agent board contract
 │   │   ├── job-scraper/               # Job search orchestration
 │   │   └── upskill/                   # /upskill skill gap analysis and learning plan
 │   └── settings.json                  # Claude Code permissions (shared, scoped)
@@ -271,6 +297,7 @@ If you prefer editing files directly instead of using `/setup`:
 | `04-job-evaluation.md` | Skill match areas, career goals, motivation filters |
 | `05-cv-templates.md` | Profile statement templates for different role types |
 | `07-interview-prep.md` | Your STAR examples from actual experience |
+| `09-kanban.md` | Visual pipeline stages, card activity, and agent board operations |
 | `search-queries.md` | Job search queries for your skills and location |
 
 ### Updating your search queries
