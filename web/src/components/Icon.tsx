@@ -25,6 +25,7 @@ export type IconName =
   | "search"
   | "spark"
   | "sun"
+  | "trash"
   | "upload"
   | "user"
   | "x";
@@ -56,6 +57,7 @@ export function Icon({ name, size = 18, ...props }: SVGProps<SVGSVGElement> & { 
     search: <><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
     spark: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z" /></>,
     sun: <><circle cx="12" cy="12" r="3.5" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
+    trash: <><path d="M4 7h16" /><path d="M10 11v6M14 11v6" /><path d="M6 7l1 14h10l1-14M9 7V4h6v3" /></>,
     upload: <><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 18v2h16v-2" /></>,
     user: <><circle cx="12" cy="8" r="3" /><path d="M5 20a7 7 0 0 1 14 0" /></>,
     x: <><path d="m6 6 12 12M18 6 6 18" /></>,

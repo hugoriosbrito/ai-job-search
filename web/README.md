@@ -37,13 +37,17 @@ dados pessoais.
 - Funil com Radar, Seleção, Candidatura, Entrevista, Oferta e Encerrada.
 - Drag-and-drop com log de autoria: movimentações manuais aparecem como
   **Você** e ações executadas pela IA aparecem como **IA**.
+- Drawer do card com status de resultado (em andamento, encerrada, recusada,
+  retirada, contratada ou arquivada), prioridade, tags, documentos e ações para
+  arquivar ou excluir com confirmação.
 - Persistência local no navegador para não perder movimentações durante o uso.
 - Importação tolerante ao CSV atual do projeto, inclusive com o cabeçalho legado
   antes do cabeçalho moderno.
 - Painel de contexto com as últimas movimentações do usuário, próximos passos e
   resumo de contagem por etapa.
 - Contrato de ferramentas em `src/lib/agent-tools.ts`: leitura de contexto,
-  criação, edição, prioridade, comentários, entrevista, movimentação e arquivo.
+  criação, edição, prioridade, comentários, entrevista, movimentação, status,
+  arquivo e exclusão.
 
 O comando `/kanban`, definido em `.claude/commands/kanban.md`, usa esse mesmo
 contrato para o agente visualizar o funil, distinguir movimentações feitas por

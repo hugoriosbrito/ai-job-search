@@ -7,6 +7,7 @@ export type ColumnId =
   | "encerrada";
 
 export type Priority = "urgente" | "alta" | "normal" | "baixa";
+export type CardStatus = "active" | "closed" | "rejected" | "withdrawn" | "hired" | "archived";
 export type Actor = "user" | "agent" | "system";
 export type AppView = "board" | "activity";
 export type Availability = "available" | "blocked";
@@ -43,6 +44,7 @@ export interface JobCard {
   portal: string;
   score: number;
   columnId: ColumnId;
+  status: CardStatus;
   priority: Priority;
   tags: string[];
   nextAction: string;
@@ -71,7 +73,9 @@ export interface Activity {
     | "set_priority"
     | "add_comment"
     | "record_interview"
+    | "set_status"
     | "archive_card"
+    | "delete_card"
     | "import_tracker";
   cardId?: string;
   cardTitle: string;
@@ -112,6 +116,8 @@ export interface AgentToolCall {
     | "set_priority"
     | "add_comment"
     | "record_interview"
-    | "archive_card";
+    | "set_status"
+    | "archive_card"
+    | "delete_card";
   args: Record<string, unknown>;
 }

@@ -1,4 +1,5 @@
-import type { ColumnId, JobCard, JobDocument, Priority } from "../types";
+import type { CardStatus, ColumnId, JobCard, JobDocument, Priority } from "../types";
+import { sourceUrlForCard } from "./source-links";
 
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -44,9 +45,18 @@ function toScore(value: string) {
   return Number.isFinite(score) ? Math.round(score) : 0;
 }
 
-function mapColumn(status: string, score: number): ColumnId {
+function mapStatus(status: string): CardStatus {
   const normalized = status.toLocaleLowerCase("pt-BR");
-  if (normalized.includes("closed") || normalized.includes("rejected") || normalized.includes("encerr")) return "encerrada";
+  if (normalized.includes("rejected") || normalized.includes("recus")) return "rejected";
+  if (normalized.includes("withdraw") || normalized.includes("retir") || normalized.includes("desist") || normalized.includes("cancel")) return "withdrawn";
+  if (normalized.includes("hired") || normalized.includes("contrat") || normalized.includes("accepted") || normalized.includes("aceit")) return "hired";
+  if (normalized.includes("closed") || normalized.includes("encerr") || normalized.includes("expired") || normalized.includes("expirad")) return "closed";
+  return "active";
+}
+
+function mapColumn(status: string, score: number): ColumnId {
+  if (mapStatus(status) !== "active") return "encerrada";
+  const normalized = status.toLocaleLowerCase("pt-BR");
   if (normalized.includes("interview") || normalized.includes("entrevista")) return "entrevista";
   if (normalized.includes("offer") || normalized.includes("oferta")) return "oferta";
   if (normalized.includes("pending") || normalized.includes("applied") || normalized.includes("submitted") || normalized.includes("candid")) return "candidatura";
@@ -94,12 +104,13 @@ export function parseTracker(text: string): JobCard[] {
     const portal = isModern ? get(row, "channel") || "Tracker" : row[4] || "Tracker";
     const score = toScore(isModern ? get(row, "fit_rating") : row[8] ?? "0");
     const status = isModern ? get(row, "status") : row[10] ?? "";
+    const cardStatus = mapStatus(status);
     const notes = isModern ? get(row, "notes") : row[9] ?? "";
     const sourceUrl = isModern ? get(row, "source") : row[3] ?? "";
     const documents = isModern ? parseDocuments(get(row, "documents") || get(row, "document_files") || get(row, "generated_documents")) : undefined;
     const rawSkills = isModern ? "" : row[6] ?? "";
     const columnId = mapColumn(status, score);
-    return {
+    const card = {
       id: trackerId(company, role, sourceUrl),
       company,
       role,
@@ -108,6 +119,7 @@ export function parseTracker(text: string): JobCard[] {
       portal,
       score,
       columnId,
+      status: cardStatus,
       priority: mapPriority(score),
       tags: (isModern ? [get(row, "sector") || "Dados", get(row, "role_type") || "A avaliar"] : rawSkills.split(";").map((skill) => skill.trim()).filter(Boolean)).slice(0, 3),
       nextAction: columnId === "encerrada" ? "Preservar no histórico" : columnId === "candidatura" ? "Acompanhar candidatura" : "Avaliar próxima ação",
@@ -120,5 +132,6 @@ export function parseTracker(text: string): JobCard[] {
       origin: "tracker",
       updatedAt: (isModern ? get(row, "date") : row[0] ?? "") ? `${isModern ? get(row, "date") : row[0]}T12:00:00.000Z` : new Date().toISOString(),
     } satisfies JobCard;
+    return { ...card, sourceUrl: sourceUrlForCard(card) ?? "" };
   });
 }

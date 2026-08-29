@@ -1,4 +1,5 @@
 import { columns } from "../data/demo";
+import { cardStatusLabels, getCardStatus } from "./card-status";
 import { getCardDocuments } from "./documents";
 import type {
   Activity,
@@ -6,6 +7,7 @@ import type {
   AgentTool,
   AgentToolCall,
   BoardState,
+  CardStatus,
   ColumnId,
   JobCard,
   Priority,
@@ -43,6 +45,12 @@ export const agentTools: AgentTool[] = [
     risk: "write",
   },
   {
+    name: "set_status",
+    description: "Marca o resultado de uma oportunidade como encerrada, recusada, retirada ou contratada.",
+    example: 'set_status({ cardId: "...", status: "rejected" })',
+    risk: "write",
+  },
+  {
     name: "add_comment",
     description: "Registra uma observação da IA no histórico do card.",
     example: 'add_comment({ cardId: "...", comment: "..." })',
@@ -56,8 +64,14 @@ export const agentTools: AgentTool[] = [
   },
   {
     name: "archive_card",
-    description: "Move uma oportunidade para Encerrada sem apagar o histórico.",
+    description: "Move uma oportunidade para o Arquivo sem apagar o histórico.",
     example: 'archive_card({ cardId: "..." })',
+    risk: "write",
+  },
+  {
+    name: "delete_card",
+    description: "Exclui permanentemente uma oportunidade do quadro e registra a ação no histórico.",
+    example: 'delete_card({ cardId: "..." })',
     risk: "write",
   },
 ];
@@ -91,7 +105,7 @@ export function buildAgentContext(board: BoardState, selectedCardId?: string): A
     (item) => item.actor === "user" && item.action === "move_card",
   );
   const openLoops = board.cards
-    .filter((card) => card.columnId !== "encerrada" && card.nextAction)
+    .filter((card) => card.columnId !== "encerrada" && getCardStatus(card) === "active" && card.nextAction)
     .sort((a, b) => {
       const priorityWeight: Record<Priority, number> = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
       return priorityWeight[a.priority] - priorityWeight[b.priority];
@@ -106,10 +120,10 @@ export function buildAgentContext(board: BoardState, selectedCardId?: string): A
 
   const text = [
     `PIPELINE CONTEXT · gerado em ${new Date().toLocaleString("pt-BR")}`,
-    `Cards ativos: ${board.cards.filter((card) => card.columnId !== "encerrada").length} de ${board.cards.length}`,
+    `Cards ativos: ${board.cards.filter((card) => card.columnId !== "encerrada" && getCardStatus(card) === "active").length} de ${board.cards.length}`,
     `Resumo: ${boardSummary.map((item) => `${item.title}=${item.count}`).join(" | ")}`,
     selectedCard
-      ? `Card em foco: ${cardTitle(selectedCard)} · etapa=${columnName(selectedCard.columnId)} · prioridade=${selectedCard.priority} · score=${selectedCard.score} · documentos=${selectedDocuments.length ? selectedDocuments.map((document) => `${document.label} (${document.href})`).join(", ") : "nenhum"}`
+      ? `Card em foco: ${cardTitle(selectedCard)} · etapa=${columnName(selectedCard.columnId)} · status=${cardStatusLabels[getCardStatus(selectedCard)]} · prioridade=${selectedCard.priority} · score=${selectedCard.score} · documentos=${selectedDocuments.length ? selectedDocuments.map((document) => `${document.label} (${document.href})`).join(", ") : "nenhum"}`
       : "Card em foco: nenhum",
     "ÚLTIMAS MOVIMENTAÇÕES FEITAS PELO USUÁRIO:",
     ...(userMoves.length
@@ -143,6 +157,7 @@ export function applyAgentTool(state: BoardState, call: AgentToolCall): { state:
       portal: String(args.portal ?? "Importação IA"),
       score: Number(args.score ?? 0),
       columnId: (args.columnId as ColumnId) ?? "radar",
+      status: "active",
       priority: (args.priority as Priority) ?? "normal",
       tags: Array.isArray(args.tags) ? args.tags.map(String) : ["Nova vaga"],
       nextAction: String(args.nextAction ?? "Avaliar aderência"),
@@ -172,7 +187,8 @@ export function applyAgentTool(state: BoardState, call: AgentToolCall): { state:
   if (call.name === "move_card") {
     const target = args.columnId as ColumnId;
     if (!columns.some((column) => column.id === target)) return { state, message: "A etapa informada não existe." };
-    const updated = { ...card, columnId: target, updatedAt: now };
+    const nextStatus: CardStatus = target === "encerrada" ? "archived" : getCardStatus(card) === "archived" ? "active" : getCardStatus(card);
+    const updated = { ...card, columnId: target, status: nextStatus, updatedAt: now };
     return {
       state: {
         ...state,
@@ -204,16 +220,44 @@ export function applyAgentTool(state: BoardState, call: AgentToolCall): { state:
     };
   }
 
-  if (call.name === "archive_card") {
-    const updated = { ...card, columnId: "encerrada" as const, updatedAt: now };
+  if (call.name === "set_status") {
+    const status = args.status as CardStatus;
+    if (!Object.prototype.hasOwnProperty.call(cardStatusLabels, status)) return { state, message: "O status informado não existe." };
+    const nextColumn = status === "archived" ? "encerrada" : status === "active" && card.columnId === "encerrada" ? "radar" : card.columnId;
+    const updated = { ...card, columnId: nextColumn, status, updatedAt: now };
     return {
       state: {
         ...state,
         cards: state.cards.map((item) => (item.id === card.id ? updated : item)),
-        activities: [activity("agent", "archive_card", card, "A IA preservou o card no histórico e o moveu para Encerrada."), ...state.activities],
+        activities: [activity("agent", "set_status", card, `A IA marcou o card como ${cardStatusLabels[status]}.`), ...state.activities],
+        lastSyncedAt: now,
+      },
+      message: `${card.company} agora está como ${cardStatusLabels[status]}.`,
+    };
+  }
+
+  if (call.name === "archive_card") {
+    const updated = { ...card, columnId: "encerrada" as const, status: "archived" as const, updatedAt: now };
+    return {
+      state: {
+        ...state,
+        cards: state.cards.map((item) => (item.id === card.id ? updated : item)),
+        activities: [activity("agent", "archive_card", card, "A IA preservou o card no histórico e o moveu para o Arquivo."), ...state.activities],
         lastSyncedAt: now,
       },
       message: `${card.company} foi arquivada sem apagar o histórico.`,
+    };
+  }
+
+  if (call.name === "delete_card") {
+    return {
+      state: {
+        ...state,
+        cards: state.cards.filter((item) => item.id !== card.id),
+        activities: [activity("agent", "delete_card", card, "A IA excluiu permanentemente este card do quadro."), ...state.activities],
+        lastSyncedAt: now,
+      },
+      message: `${card.company} foi excluída do quadro.`,
     };
   }
 
@@ -278,9 +322,15 @@ export function parseCommand(input: string, cards: JobCard[]): AgentToolCall | u
   const card = cards.find((item) => normalized.includes(item.company.toLocaleLowerCase("pt-BR")) || normalized.includes(item.role.toLocaleLowerCase("pt-BR")));
   if (!card) return undefined;
 
+  if (normalized.includes("exclu") || normalized.includes("delet") || normalized.includes("apagu")) return { name: "delete_card", args: { cardId: card.id } };
+  if (normalized.includes("arquiv")) return { name: "archive_card", args: { cardId: card.id } };
+  if (normalized.includes("recus")) return { name: "set_status", args: { cardId: card.id, status: "rejected" } };
+  if (normalized.includes("retir") || normalized.includes("desist")) return { name: "set_status", args: { cardId: card.id, status: "withdrawn" } };
+  if (normalized.includes("contrat") || normalized.includes("aceit")) return { name: "set_status", args: { cardId: card.id, status: "hired" } };
+  if (normalized.includes("encerr") || normalized.includes("fechad")) return { name: "set_status", args: { cardId: card.id, status: "closed" } };
+  if (normalized.includes("em andamento") || normalized.includes("reativ")) return { name: "set_status", args: { cardId: card.id, status: "active" } };
   if (normalized.includes("entrevista")) return { name: "move_card", args: { cardId: card.id, columnId: "entrevista" } };
   if (normalized.includes("oferta")) return { name: "move_card", args: { cardId: card.id, columnId: "oferta" } };
-  if (normalized.includes("arquiv") || normalized.includes("encerr")) return { name: "archive_card", args: { cardId: card.id } };
   if (normalized.includes("prioridade") || normalized.includes("prioriz")) return { name: "set_priority", args: { cardId: card.id, priority: normalized.includes("urg") ? "urgente" : "alta" } };
   if (normalized.includes("nota") || normalized.includes("coment")) return { name: "add_comment", args: { cardId: card.id, comment: input } };
   return { name: "get_board_context", args: { cardId: card.id } };
