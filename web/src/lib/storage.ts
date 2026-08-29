@@ -1,10 +1,15 @@
-import type { BoardState } from "../types";
+import type { BoardState, CardStatus, JobCard } from "../types";
+import { sourceUrlForCard } from "./source-links";
 
 const STORAGE_KEY = "ai-job-search-kanban:v1";
 
 function normalizeCards(cards: BoardState["cards"]) {
   const usedIds = new Set<string>();
   return cards.map((card) => {
+    const rawStatus = (card as Partial<JobCard>).status;
+    const status: CardStatus = ["active", "closed", "rejected", "withdrawn", "hired", "archived"].includes(String(rawStatus))
+      ? rawStatus as CardStatus
+      : card.columnId === "encerrada" ? "archived" : "active";
     let nextId = card.id;
     if (usedIds.has(nextId)) {
       const sourceSuffix = card.sourceUrl.split("/").filter(Boolean).pop()?.replace(/[^a-z0-9]+/gi, "-").slice(-24) || "duplicado";
@@ -13,7 +18,7 @@ function normalizeCards(cards: BoardState["cards"]) {
       while (usedIds.has(nextId)) nextId = `${card.id}-${sourceSuffix}-${copy++}`;
     }
     usedIds.add(nextId);
-    return nextId === card.id ? card : { ...card, id: nextId };
+    return { ...card, id: nextId, sourceUrl: sourceUrlForCard(card) ?? "", status };
   });
 }
 

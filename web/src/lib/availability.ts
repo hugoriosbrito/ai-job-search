@@ -1,4 +1,5 @@
 import type { JobCard } from "../types";
+import { getCardStatus } from "./card-status";
 
 const blockedSignals: Array<[RegExp, string]> = [
   [/bloquead|block(ed)?/i, "Bloqueada na busca"],
@@ -9,15 +10,16 @@ const blockedSignals: Array<[RegExp, string]> = [
 ];
 
 export function getAvailability(card: JobCard): "available" | "blocked" {
+  if (card.columnId === "encerrada" || getCardStatus(card) !== "active") return "blocked";
   if (card.availability) return card.availability;
-  if (card.columnId === "encerrada") return "blocked";
   const text = `${card.location} ${card.fitSummary} ${card.notes}`;
   return blockedSignals.some(([signal]) => signal.test(text)) ? "blocked" : "available";
 }
 
 export function getBlockReason(card: JobCard) {
   if (card.blockReason) return card.blockReason;
-  if (card.columnId === "encerrada") return "Vaga encerrada";
+  if (card.columnId === "encerrada") return getCardStatus(card) === "archived" ? "Arquivada" : "Vaga encerrada";
+  if (getCardStatus(card) !== "active") return getCardStatus(card) === "rejected" ? "Vaga recusada" : getCardStatus(card) === "withdrawn" ? "Candidatura retirada" : getCardStatus(card) === "hired" ? "Contratação concluída" : "Vaga encerrada";
   const text = `${card.location} ${card.fitSummary} ${card.notes}`;
   return blockedSignals.find(([signal]) => signal.test(text))?.[1] ?? "Bloqueada na busca";
 }

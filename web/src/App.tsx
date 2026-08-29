@@ -4,14 +4,17 @@ import { Icon } from "./components/Icon";
 import { columns, demoBoard } from "./data/demo";
 import { applyAgentTool, buildAgentContext, parseCommand } from "./lib/agent-tools";
 import { getAvailability, getBlockReason } from "./lib/availability";
+import { cardStatusLabels, cardStatusOptions, getCardStatus } from "./lib/card-status";
 import { getCardDocuments } from "./lib/documents";
 import type { ResolvedJobDocument } from "./lib/documents";
+import { sourceUrlForCard } from "./lib/source-links";
 import { parseTracker } from "./lib/tracker-import";
 import { loadBoard, saveBoard } from "./lib/storage";
 import type {
   Activity,
   AppView,
   BoardState,
+  CardStatus,
   ColumnId,
   JobCard,
   Priority,
@@ -73,6 +76,27 @@ function faviconUrl(sourceUrl?: string) {
     return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(hostname)}&sz=64`;
   } catch {
     return undefined;
+  }
+}
+
+function usableSourceUrl(sourceUrl?: string) {
+  if (!sourceUrl) return undefined;
+  try {
+    const url = new URL(sourceUrl);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sourceLinkLabel(sourceUrl?: string) {
+  const usable = usableSourceUrl(sourceUrl);
+  if (!usable) return "Link indisponível";
+  try {
+    const url = new URL(usable);
+    return url.pathname === "/" || url.pathname === "" ? "Abrir fonte" : "Abrir vaga";
+  } catch {
+    return "Abrir fonte";
   }
 }
 
@@ -138,10 +162,15 @@ function App() {
       .then((response) => (response.ok ? response.json() as Promise<JobCard[]> : Promise.reject(new Error("tracker ausente"))))
       .then((importedCards) => {
         if (!importedCards.length) return;
+        const normalizedCards = importedCards.map((card) => ({
+          ...card,
+          sourceUrl: sourceUrlForCard(card) ?? "",
+          status: getCardStatus(card),
+        }));
         setBoard((current) => ({
           ...current,
-          cards: importedCards,
-          activities: [{ id: id("activity"), actor: "system", action: "import_tracker", cardTitle: "Importação inicial", detail: `${importedCards.length} oportunidades carregadas do arquivo local.`, createdAt: now() }, ...current.activities],
+          cards: normalizedCards,
+          activities: [{ id: id("activity"), actor: "system", action: "import_tracker", cardTitle: "Importação inicial", detail: `${normalizedCards.length} oportunidades carregadas do arquivo local.`, createdAt: now() }, ...current.activities],
           lastSyncedAt: now(),
         }));
         setToast(`${importedCards.length} oportunidades carregadas.`);
@@ -212,7 +241,8 @@ function App() {
     setBoard((current) => {
       const card = current.cards.find((item) => item.id === cardId);
       if (!card || card.columnId === targetColumnId) return current;
-      const updatedCard = { ...card, columnId: targetColumnId, updatedAt: now() };
+      const status = targetColumnId === "encerrada" ? "archived" : getCardStatus(card) === "archived" ? "active" : getCardStatus(card);
+      const updatedCard = { ...card, columnId: targetColumnId, status, updatedAt: now() };
       const updated = { ...current, cards: current.cards.map((item) => item.id === cardId ? updatedCard : item) };
       return addActivity(updated, {
         actor,
@@ -231,6 +261,7 @@ function App() {
   const executeTool = (name: Parameters<typeof applyAgentTool>[1]["name"], args: Record<string, unknown>) => {
     const result = applyAgentTool(board, { name, args });
     setBoard(result.state);
+    if (name === "delete_card" && args.cardId === selectedCardId) setSelectedCardId(undefined);
     showToast(result.message);
   };
 
@@ -270,6 +301,58 @@ function App() {
     showToast(`Prioridade ${priorityLabels[priority].toLocaleLowerCase("pt-BR")} definida.`);
   };
 
+  const updateStatus = (cardId: string, status: CardStatus) => {
+    setBoard((current) => {
+      const card = current.cards.find((item) => item.id === cardId);
+      if (!card || getCardStatus(card) === status) return current;
+      const nextColumn = status === "archived" ? "encerrada" : status === "active" && card.columnId === "encerrada" ? "radar" : card.columnId;
+      const updatedCard = { ...card, status, columnId: nextColumn, updatedAt: now() };
+      const updated = { ...current, cards: current.cards.map((item) => item.id === cardId ? updatedCard : item) };
+      return addActivity(updated, {
+        actor: "user",
+        action: "set_status",
+        cardId,
+        cardTitle: `${card.company} · ${card.role}`,
+        detail: `Você marcou o card como ${cardStatusLabels[status]}.`,
+      });
+    });
+    showToast(`Status definido como ${cardStatusLabels[status].toLocaleLowerCase("pt-BR")}.`);
+  };
+
+  const archiveCard = (cardId: string) => {
+    setBoard((current) => {
+      const card = current.cards.find((item) => item.id === cardId);
+      if (!card) return current;
+      const updatedCard = { ...card, columnId: "encerrada" as const, status: "archived" as const, updatedAt: now() };
+      const updated = { ...current, cards: current.cards.map((item) => item.id === cardId ? updatedCard : item) };
+      return addActivity(updated, {
+        actor: "user",
+        action: "archive_card",
+        cardId,
+        cardTitle: `${card.company} · ${card.role}`,
+        detail: "Você arquivou o card e preservou seu histórico.",
+        fromColumn: card.columnId,
+        toColumn: "encerrada",
+      });
+    });
+    setSelectedCardId(undefined);
+    showToast("Card arquivado no histórico.");
+  };
+
+  const deleteCard = (cardId: string) => {
+    const card = board.cards.find((item) => item.id === cardId);
+    if (!card || !window.confirm(`Excluir permanentemente ${card.company} · ${card.role}?`)) return;
+    setBoard((current) => addActivity({ ...current, cards: current.cards.filter((item) => item.id !== cardId) }, {
+      actor: "user",
+      action: "delete_card",
+      cardId,
+      cardTitle: `${card.company} · ${card.role}`,
+      detail: "Você excluiu permanentemente este card do quadro.",
+    }));
+    setSelectedCardId(undefined);
+    showToast("Card excluído do quadro.");
+  };
+
   const updateTags = (cardId: string, tags: string[]) => {
     const normalizedTags = [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].slice(0, 12);
     setBoard((current) => {
@@ -298,6 +381,7 @@ function App() {
       portal: "Entrada manual",
       score: values.score,
       columnId: values.columnId,
+      status: "active",
       priority: values.score >= 85 ? "alta" : "normal",
       tags: ["Nova oportunidade"],
       nextAction: "Avaliar aderência",
@@ -330,7 +414,7 @@ function App() {
           const existingByKey = new Map(current.cards.map((card) => [`${card.company}|${card.role}`, card]));
           const merged = imported.map((card) => {
             const previous = existingByKey.get(`${card.company}|${card.role}`);
-            return previous ? { ...card, id: previous.id, columnId: previous.columnId, priority: previous.priority, notes: previous.notes || card.notes, interview: previous.interview, updatedAt: now() } : card;
+            return previous ? { ...card, id: previous.id, columnId: previous.columnId, status: previous.status, priority: previous.priority, notes: previous.notes || card.notes, interview: previous.interview, updatedAt: now() } : card;
           });
           return addActivity({ ...current, cards: merged }, {
             actor: "system",
@@ -419,7 +503,7 @@ function App() {
             </section>
           </>}
 
-          {view === "activity" && <ActivityView activities={board.activities} onCardClick={(cardId) => { setSelectedCardId(cardId); setView("board"); }} />}
+          {view === "activity" && <ActivityView activities={board.activities} onCardClick={(cardId) => { if (board.cards.some((card) => card.id === cardId)) { setSelectedCardId(cardId); setView("board"); } else showToast("O card não está mais no quadro; a atividade foi preservada no histórico."); }} />}
         </div>
 
         <nav className="portfolio-dock" aria-label="Navegação do quadro">
@@ -429,7 +513,7 @@ function App() {
         </nav>
       </main>
 
-      {selectedCard && <CardDrawer card={selectedCard} onClose={() => setSelectedCardId(undefined)} onMove={(target) => moveCard(selectedCard.id, target)} onPriority={(priority) => updatePriority(selectedCard.id, priority)} onTags={(tags) => updateTags(selectedCard.id, tags)} onArchive={() => executeTool("archive_card", { cardId: selectedCard.id })} />}
+      {selectedCard && <CardDrawer card={selectedCard} onClose={() => setSelectedCardId(undefined)} onMove={(target) => moveCard(selectedCard.id, target)} onPriority={(priority) => updatePriority(selectedCard.id, priority)} onStatus={(status) => updateStatus(selectedCard.id, status)} onTags={(tags) => updateTags(selectedCard.id, tags)} onArchive={() => archiveCard(selectedCard.id)} onDelete={() => deleteCard(selectedCard.id)} />}
       {isComposerOpen && <CreateCardModal initialColumnId={composerColumn} onClose={() => setComposerOpen(false)} onCreate={createCard} />}
       {isContextOpen && <ContextModal context={agentContext} onClose={() => setContextOpen(false)} />}
       {isCommandPaletteOpen && <CommandPalette selectedCard={selectedCard} command={command} onCommandChange={setCommand} onSubmit={runCommand} onClose={() => setCommandPaletteOpen(false)} />}
@@ -503,6 +587,7 @@ function DocumentDownloadLink({ document, compact = false }: { document: Resolve
 
 function KanbanCard({ card, selected, dragging, onClick, onDragStart, onDragEnd }: { card: JobCard; selected: boolean; dragging: boolean; onClick: () => void; onDragStart: (event: DragEvent<HTMLDivElement>, cardId: string) => void; onDragEnd: () => void }) {
   const scoreClass = card.score >= 85 ? "score--strong" : card.score >= 70 ? "score--good" : "score--weak";
+  const status = getCardStatus(card);
   const documents = getCardDocuments(card);
   return <div className={`kanban-card ${selected ? "kanban-card--selected" : ""} ${dragging ? "kanban-card--dragging" : ""}`} draggable onClick={onClick} onDragStart={(event) => onDragStart(event, card.id)} onDragEnd={onDragEnd} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onClick(); }}>
     <div className="card-topline"><CompanyAvatar card={card} /><span className="card-company">{card.company}</span><span className={`priority-indicator priority-indicator--${card.priority}`} title={`Prioridade ${priorityLabels[card.priority]}`}><Icon name="flag" size={12} /></span><Icon name="more" size={16} /></div>
@@ -510,6 +595,7 @@ function KanbanCard({ card, selected, dragging, onClick, onDragStart, onDragEnd 
     <div className="card-meta"><span><Icon name="link" size={12} /> {card.portal}</span><span><Icon name="clock" size={12} /> {card.mode}</span></div>
     <div className="fit-line"><span>Aderência</span><strong className={scoreClass}>{card.score}<small>/100</small></strong><div className="fit-track"><i style={{ width: `${Math.min(card.score, 100)}%` }} /></div></div>
     {documents.length > 0 && <div className="card-document-links" aria-label="Arquivos da candidatura">{documents.map((document) => <DocumentDownloadLink key={`${document.kind}-${document.file}`} document={document} compact />)}</div>}
+    {status !== "active" && <div className={`card-status card-status--${status}`}>{cardStatusLabels[status]}</div>}
     <div className="card-footer"><span className={card.dueDate ? "due-date" : "due-date due-date--muted"}><Icon name="calendar" size={13} /> {formatDate(card.dueDate)}</span><span className={`availability availability--${getAvailability(card)}`}>{availabilityLabel(card)}</span></div>
   </div>;
 }
@@ -519,9 +605,11 @@ function ActivityView({ activities, onCardClick }: { activities: Activity[]; onC
 }
 
 
-function CardDrawer({ card, onClose, onMove, onPriority, onTags, onArchive }: { card: JobCard; onClose: () => void; onMove: (columnId: ColumnId) => void; onPriority: (priority: Priority) => void; onTags: (tags: string[]) => void; onArchive: () => void }) {
+function CardDrawer({ card, onClose, onMove, onPriority, onStatus, onTags, onArchive, onDelete }: { card: JobCard; onClose: () => void; onMove: (columnId: ColumnId) => void; onPriority: (priority: Priority) => void; onStatus: (status: CardStatus) => void; onTags: (tags: string[]) => void; onArchive: () => void; onDelete: () => void }) {
   const documents = getCardDocuments(card);
-  return <div className="drawer-backdrop" onClick={onClose}><aside className="card-drawer" onClick={(event) => event.stopPropagation()}><div className="drawer-top"><strong>Detalhes da oportunidade</strong><button className="icon-button" onClick={onClose} aria-label="Fechar detalhes"><Icon name="x" size={18} /></button></div><div className="drawer-company"><CompanyAvatar card={card} large /><div><strong>{card.company}</strong><small>{card.portal} · {card.location}</small></div></div><h2>{card.role}</h2><div className="drawer-score"><div><span>Score de aderência</span><strong>{card.score}<small>/100</small></strong></div><div className="drawer-score-bar"><i style={{ width: `${card.score}%` }} /></div></div><div className="drawer-fields"><div><span>Etapa</span><Dropdown ariaLabel="Etapa" value={card.columnId} options={columns.map((column) => ({ value: column.id, label: column.title }))} onChange={onMove} /></div><div><span>Prioridade</span><Dropdown ariaLabel="Prioridade" value={card.priority} options={Object.entries(priorityLabels).map(([value, label]) => ({ value: value as Priority, label }))} onChange={onPriority} /></div><div><span>Próxima ação</span><strong>{card.nextAction}</strong></div><div><span>Disponibilidade</span><strong className={`availability availability--${getAvailability(card)}`}>{availabilityLabel(card)}</strong></div></div><div className="drawer-block"><div className="drawer-block-title"><span>Leitura de aderência</span><span className="score-chip">{card.score} pts</span></div><p>{card.fitSummary}</p></div>{card.interview && <div className="drawer-block drawer-block--interview"><div className="drawer-block-title"><span><Icon name="calendar" size={13} /> {card.interview.stage}</span><span>{formatDate(card.interview.date)}</span></div><p>{card.interview.detail}</p><small>Próximo passo: {card.interview.nextStep}</small></div>}<div className="drawer-block"><div className="drawer-block-title"><span>Notas</span><Icon name="comment" size={14} /></div><p className="drawer-notes">{card.notes || "Nenhuma nota registrada."}</p></div>{documents.length > 0 && <div className="drawer-block drawer-documents"><div className="drawer-block-title"><span><Icon name="file" size={14} /> Documentos da candidatura</span><span>{documents.length}</span></div><div className="document-list">{documents.map((document) => <DocumentDownloadLink key={`${document.kind}-${document.file}`} document={document} />)}</div></div>}<TagEditor tags={card.tags} onChange={onTags} /><div className="drawer-actions">{card.sourceUrl ? <a className="button button--quiet" href={card.sourceUrl} target="_blank" rel="noreferrer"><Icon name="external" size={15} /> Abrir vaga</a> : <span className="button button--disabled">Sem link</span>}<button className="button button--danger" onClick={onArchive}><Icon name="archive" size={15} /> Encerrar</button></div><div className="drawer-footer"><span>Atualizado {formatTimestamp(card.updatedAt)}</span></div></aside></div>;
+  const sourceUrl = usableSourceUrl(sourceUrlForCard(card));
+  const status = getCardStatus(card);
+  return <div className="drawer-backdrop" onClick={onClose}><aside className="card-drawer" onClick={(event) => event.stopPropagation()}><div className="drawer-top"><strong>Detalhes da oportunidade</strong><button className="icon-button" onClick={onClose} aria-label="Fechar detalhes"><Icon name="x" size={18} /></button></div><div className="drawer-company"><CompanyAvatar card={card} large /><div><strong>{card.company}</strong><small>{card.portal} · {card.location}</small></div></div><h2>{card.role}</h2><div className="drawer-score"><div><span>Score de aderência</span><strong>{card.score}<small>/100</small></strong></div><div className="drawer-score-bar"><i style={{ width: `${card.score}%` }} /></div></div><div className="drawer-fields"><div><span>Etapa</span><Dropdown ariaLabel="Etapa" value={card.columnId} options={columns.map((column) => ({ value: column.id, label: column.title }))} onChange={onMove} /></div><div><span>Status</span><Dropdown ariaLabel="Status" value={status} options={cardStatusOptions} onChange={onStatus} /></div><div><span>Prioridade</span><Dropdown ariaLabel="Prioridade" value={card.priority} options={Object.entries(priorityLabels).map(([value, label]) => ({ value: value as Priority, label }))} onChange={onPriority} /></div><div><span>Próxima ação</span><strong>{card.nextAction}</strong></div><div><span>Disponibilidade</span><strong className={`availability availability--${getAvailability(card)}`}>{availabilityLabel(card)}</strong></div></div><div className="drawer-block"><div className="drawer-block-title"><span>Leitura de aderência</span><span className="score-chip">{card.score} pts</span></div><p>{card.fitSummary}</p></div>{card.interview && <div className="drawer-block drawer-block--interview"><div className="drawer-block-title"><span><Icon name="calendar" size={13} /> {card.interview.stage}</span><span>{formatDate(card.interview.date)}</span></div><p>{card.interview.detail}</p><small>Próximo passo: {card.interview.nextStep}</small></div>}<div className="drawer-block"><div className="drawer-block-title"><span>Notas</span><Icon name="comment" size={14} /></div><p className="drawer-notes">{card.notes || "Nenhuma nota registrada."}</p></div>{documents.length > 0 && <div className="drawer-block drawer-documents"><div className="drawer-block-title"><span><Icon name="file" size={14} /> Documentos da candidatura</span><span>{documents.length}</span></div><div className="document-list">{documents.map((document) => <DocumentDownloadLink key={`${document.kind}-${document.file}`} document={document} />)}</div></div>}<TagEditor tags={card.tags} onChange={onTags} /><div className="drawer-actions">{sourceUrl ? <a className="button button--quiet" href={sourceUrl} target="_blank" rel="noreferrer"><Icon name="external" size={15} /> {sourceLinkLabel(sourceUrl)}</a> : <span className="button button--disabled">Link indisponível</span>}<button type="button" className="button button--quiet" onClick={onArchive}><Icon name="archive" size={15} /> Arquivar</button><button type="button" className="button button--danger" onClick={onDelete}><Icon name="trash" size={15} /> Excluir</button></div><div className="drawer-footer"><span>Atualizado {formatTimestamp(card.updatedAt)}</span></div></aside></div>;
 }
 
 function CreateCardModal({ initialColumnId = "radar", onClose, onCreate }: { initialColumnId?: ColumnId; onClose: () => void; onCreate: (values: { company: string; role: string; columnId: ColumnId; score: number }) => void }) {
